@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-workbench",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-29",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "vars": {
+    "AI_BASE_URL": "https://api.deepseek.com/v1",
+    "AI_MODEL": "deepseek-reasoner"
+  },
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "ai-workbench"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "WORKBENCH_DB",
+      "database_name": "ai-workbench-data",
+      "database_id": "12b95e03-5dd4-46bf-a0d7-0990f3a86e80",
+      "migrations_dir": "cloudflare/migrations"
+    }
+  ]
+}

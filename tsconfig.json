@@ -1,0 +1,69 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next-daily-affiliation-build/types/**/*.ts",
+    ".next-daily-build/types/**/*.ts",
+    ".next-daily-dev/types/**/*.ts",
+    ".next-daily-orchestration-build/types/**/*.ts",
+    ".next-daily-orchestration-cf/types/**/*.ts",
+    ".next-daily-orchestration-cf/types/**/*.ts",
+    ".next-daily-radar-recovery/types/**/*.ts",
+    ".next-daily-radar-test/types/**/*.ts",
+    ".next-daily-research-test/types/**/*.ts",
+    ".next-daily-scheduling-build/types/**/*.ts",
+    ".next-daily-self-test/types/**/*.ts",
+    ".next-daily-six-scenes-build/types/**/*.ts",
+    ".next-daily-six-scenes-test/types/**/*.ts",
+    ".next-daily-strategy-test/types/**/*.ts",
+    ".next-execution-cf-build/types/**/*.ts",
+    ".next-local-recovery-1015/types/**/*.ts",
+    ".next-personality-clean/types/**/*.ts",
+    ".next-personality-dev/types/**/*.ts",
+    ".next-recovery/types/**/*.ts",
+    ".next-resource-runtime/types/**/*.ts",
+    ".next-self-audit-dev/types/**/*.ts",
+    ".next-system-scene-dev/types/**/*.ts",
+    ".next-upload-deploy-20261011-final/types/**/*.ts",
+    ".next-upload-deploy-20261011/types/**/*.ts",
+    ".next-workbench-audit-cf/types/**/*.ts",
+    ".next/types/**/*.ts",
+    "next-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "generated/**",
+    "output/**",
+    ".wrangler/**",
+    ".open-next/**"
+  ]
+}

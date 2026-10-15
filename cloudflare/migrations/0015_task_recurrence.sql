@@ -1,0 +1,1 @@
+ALTER TABLE "Action" ADD COLUMN "recurrence" TEXT NOT NULL DEFAULT 'none';

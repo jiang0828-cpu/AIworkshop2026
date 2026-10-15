@@ -1,0 +1,27 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthConfig } from "@/lib/auth-config";
+import { isAuthConfigured, isAuthorized } from "@/lib/request-auth";
+import { isSessionValid } from "@/lib/session-auth";
+import { getCloudSyncConfig, isCloudSyncAuthorized } from "@/lib/cloud-sync";
+
+function challenge(message = "需要验证后才能访问 AI 工作台") {
+  return new NextResponse(message, { status: 401, headers: { "WWW-Authenticate": 'Basic realm="AI 工作台", charset="UTF-8"', "Cache-Control": "no-store" } });
+}
+
+export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/api/auth/login") return NextResponse.next();
+  if (request.nextUrl.pathname === "/api/sync/import") {
+    const { token, runningOnCloudflare } = getCloudSyncConfig();
+    if (runningOnCloudflare && isCloudSyncAuthorized(request.headers.get("x-workbench-sync-token"), token)) return NextResponse.next();
+  }
+  const { email, password, runningOnCloudflare } = getAuthConfig();
+  const credentials = { email, password };
+  if (!isAuthConfigured(credentials)) {
+    if (runningOnCloudflare) return new NextResponse("线上访问验证尚未配置，请先设置 Worker Secret。", { status: 503, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.next();
+  }
+  if ((await isSessionValid(request.cookies.get("ai_workbench_session")?.value, credentials)) || isAuthorized(request.headers.get("authorization"), credentials)) return NextResponse.next();
+  return request.nextUrl.pathname.startsWith("/api/") ? challenge() : NextResponse.redirect(new URL("/login", request.url));
+}
+
+export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };

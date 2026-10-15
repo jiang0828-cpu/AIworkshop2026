@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --ink: #1f2933; --muted: #718096; --sage: #5e7867; --paper: #fbfcfa; --line: #e3e8e3; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: var(--paper); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+textarea { resize: vertical; }
+input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: white; padding: .55rem .7rem; font-size: .875rem; outline: none; }
+input:focus, textarea:focus, select:focus { border-color: var(--sage); box-shadow: 0 0 0 3px rgba(94, 120, 103, .1); }
+.prose-workbench p { margin: .65rem 0; line-height: 1.75; }
+.prose-workbench h1, .prose-workbench h2, .prose-workbench h3 { color: #27352d; }
+.prose-workbench h1 { font-size: 1.45rem; margin: 0 0 1.5rem; }
+.prose-workbench h2 { font-size: 1rem; margin: 1.5rem 0 .65rem; border-bottom: 1px solid var(--line); padding-bottom: .35rem; }
+.prose-workbench ul { padding-left: 1.3rem; }
+.prose-workbench li { margin: .45rem 0; }
+@media (max-width: 760px) { .mobile-scroll { overflow-x: auto; } }

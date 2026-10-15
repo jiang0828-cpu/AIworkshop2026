@@ -1,0 +1,887 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Cloudflare Workers cannot load Prisma's native query engine. Keep the
+// default client above for local SQLite and generate a D1-only client that
+// delegates queries to the JavaScript driver adapter instead.
+generator cloudflareClient {
+  provider   = "prisma-client-js"
+  output     = "../node_modules/@prisma/cloudflare-client"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model WorkbenchScene {
+  id        String   @id
+  profileId String
+  slot      Int
+  name      String
+  position  Int
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@unique([profileId, slot])
+}
+
+// Typed payloads are validated by strategy schemas; versions retain complete snapshots.
+model StrategyRecord {
+  id        String   @id
+  profileId String
+  kind      String
+  sceneId   String?
+  title     String
+  payload   String
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId, kind, sceneId])
+}
+
+model StrategyVersion {
+  id        String   @id
+  profileId String
+  recordId  String
+  kind      String
+  snapshot  String
+  createdAt DateTime @default(now())
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId, recordId, createdAt])
+}
+
+model GoalRelation {
+  id        String   @id
+  profileId String
+  fromId    String
+  toId      String
+  kind      String
+  evidence  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@unique([profileId, fromId, toId, kind])
+}
+
+model RecordSource {
+  id          String   @id
+  profileId   String
+  targetType  String
+  targetId    String
+  sourceType  String
+  sourceId    String
+  sourceTitle String
+  createdAt   DateTime @default(now())
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId, targetId])
+}
+
+model WorkbenchPin {
+  id        String   @id
+  profileId String
+  date      String
+  taskKey   String
+  position  Int
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@unique([profileId, date, taskKey])
+}
+
+model GoalBatch {
+  id        String   @id
+  profileId String
+  payload   String
+  createdAt DateTime @default(now())
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ExecutionPlan {
+  id          String   @id
+  profileId   String
+  revision    Int      @default(1)
+  status      String   @default("draft")
+  snapshot    String
+  fingerprint String
+  payload     String
+  leaseToken  String?
+  leaseUntil  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([profileId, status])
+}
+
+model SelfActionReview {
+  id         String   @id
+  profileId  String
+  actionId   String
+  result     String
+  adjustment String   @default("")
+  deferred   Boolean  @default(false)
+  applied    String   @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  profile    Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@unique([profileId, actionId])
+}
+
+model Profile {
+  id               String            @id @default(cuid())
+  name             String            @default("")
+  ageRange         String            @default("")
+  birthYear        String            @default("")
+  genderIdentity   String            @default("")
+  city             String            @default("")
+  education        String            @default("")
+  major            String            @default("")
+  personalityTraits String           @default("")
+  industry         String            @default("")
+  organization     String            @default("")
+  employmentStatus String            @default("")
+  jobTitle         String            @default("")
+  stage            String            @default("")
+  roles            String            @default("")
+  responsibilities String            @default("")
+  professionalFocus String           @default("")
+  stageTransition  String            @default("")
+  currentPriorities String           @default("")
+  stageNeeds       String            @default("")
+  currentChallenges String           @default("")
+  directionOneToThreeYears String    @default("")
+  successDefinition String           @default("")
+  familyResponsibilities String      @default("")
+  healthEnergy     String            @default("")
+  incomeRange      String            @default("")
+  financialPressure String           @default("")
+  behaviorPatterns String            @default("")
+  riskPreference   String            @default("")
+  sensitiveAiFields String           @default("[]")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  experiences      Experience[]
+  evidences        Evidence[]
+  valueRules       ValueRule[]
+  resources        Resource[]
+  constraints      Constraint[]
+  assumptions      Assumption[]
+  goals            Goal[]
+  projects         Project[]
+  actions          Action[]
+  reviews          Review[]
+  decisions        Decision[]
+  aiInstruction    AIInstruction?
+  suggestions      AISuggestion[]
+  documentVersions DocumentVersion[]
+  identityCard     IdentityCard?
+  identityCardVersions IdentityCardVersion[]
+  contextPackages  ContextPackage[]
+  aiTasks          AITask[]
+  correctionRecords CorrectionRecord[]
+  situationAssessment SituationAssessment?
+  situationItems   SituationItem[]
+  dailyPlans       DailyPlan[]
+  dailyAgents      DailyAgent[]
+  dailyAssets      DailyAsset[]
+  dailyControl     DailyControl?
+  workbenchScenes  WorkbenchScene[]
+  strategyRecords  StrategyRecord[]
+  strategyVersions StrategyVersion[]
+  goalRelations    GoalRelation[]
+  recordSources    RecordSource[]
+  workbenchPins    WorkbenchPin[]
+  goalBatches      GoalBatch[]
+  selfActionReviews SelfActionReview[]
+  researchBatches ResearchBatch[]
+}
+
+// Sources and conclusions are validated immutable JSON records within each batch.
+// One aggregate permits lease-guarded atomic phase checkpoints on SQLite and D1.
+model RadarRecord {
+  id String @id
+  profileId String
+  kind String
+  title String
+  sceneId String?
+  topicId String?
+  parentId String?
+  status String @default("draft")
+  version Int @default(1)
+  payload String @default("{}")
+  originKey String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([profileId, originKey])
+  @@index([profileId, kind, sceneId, createdAt])
+  @@index([profileId, parentId])
+}
+
+model ResearchBatch {
+  id String @id
+  profileId String
+  sceneId String?
+  question String
+  background String
+  queries String
+  days Int @default(30)
+  online Boolean @default(true)
+  previousId String?
+  status String @default("queued")
+  phase Int @default(0)
+  version Int @default(1)
+  slot Int? @unique
+  leaseToken String?
+  leaseUntil DateTime?
+  leaseUntilSeconds Int?
+  sources String @default("[]")
+  conclusions String @default("[]")
+  gaps String @default("")
+  changes String @default("")
+  calls String @default("[]")
+  error String @default("")
+  followUpDate String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId, status, createdAt])
+}
+
+model SituationAssessment {
+  id                String   @id @default(cuid())
+  profileId         String   @unique
+  todayStatus       String   @default("")
+  todaySignals      String   @default("")
+  todayJudgement    String   @default("")
+  keyEvents         String   @default("")
+  keyEventAnalysis  String   @default("")
+  trendRadar        String   @default("")
+  trendStage        String   @default("")
+  trendScenarios    String   @default("")
+  enterpriseImpact  String   @default("")
+  enterpriseActions String   @default("")
+  personalImpact    String   @default("")
+  personalActions   String   @default("")
+  sourceNotes       String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  profile           Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model SituationItem {
+  id        String   @id @default(cuid())
+  profileId String
+  category  String
+  title     String
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, category, updatedAt])
+}
+
+model Experience {
+  id          String    @id @default(cuid())
+  profileId   String
+  title       String
+  description String    @default("")
+  learning    String    @default("")
+  happenedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Evidence {
+  id         String   @id @default(cuid())
+  profileId  String
+  ability    String
+  evidence   String
+  confidence Int      @default(3)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  profile    Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ValueRule {
+  id        String   @id @default(cuid())
+  profileId String
+  value     String
+  priority  Int      @default(3)
+  rule      String   @default("")
+  conflict  String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Resource {
+  id          String   @id @default(cuid())
+  profileId   String
+  name        String
+  description String   @default("")
+  category    String   @default("其他")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Constraint {
+  id          String   @id @default(cuid())
+  profileId   String
+  name        String
+  description String   @default("")
+  severity    String   @default("中")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Assumption {
+  id        String   @id @default(cuid())
+  profileId String
+  statement String
+  status    String   @default("待验证")
+  evidence  String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Goal {
+  sceneId     String?
+  visionId    String?
+  id          String    @id @default(cuid())
+  profileId   String
+  parentId    String?
+  title       String
+  description String    @default("")
+  horizon     String    @default("90天")
+  status      String    @default("进行中")
+  metric      String    @default("")
+  deadline    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  parent      Goal?     @relation("GoalHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Goal[]    @relation("GoalHierarchy")
+  projects    Project[]
+  actions     Action[]
+  aiTasks     AITask[]
+  contextPackages ContextPackage[]
+}
+
+model Project {
+  recordCode    String?     @unique
+  deadline      DateTime?
+  parentId      String?
+  sceneId       String?
+  visionId      String?
+  id            String      @id @default(cuid())
+  profileId     String
+  goalId        String?
+  name          String
+  description   String      @default("")
+  status        String      @default("进行中")
+  metric        String      @default("")
+  budget        String      @default("")
+  boundary      String      @default("")
+  stopCondition String      @default("")
+  risk          String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  profile       Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  goal          Goal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  milestones    Milestone[]
+  actions       Action[]
+  aiTasks       AITask[]
+  contextPackages ContextPackage[]
+  parent        Project? @relation("ProjectHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Project[] @relation("ProjectHierarchy")
+  @@index([profileId, parentId])
+}
+
+model Milestone {
+  id        String    @id @default(cuid())
+  projectId String
+  title     String
+  deadline  DateTime?
+  status    String    @default("未开始")
+  metric    String    @default("")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Action {
+  recordCode     String?    @unique
+  parentId       String?
+  id             String    @id @default(cuid())
+  profileId      String
+  goalId         String?
+  projectId      String?
+  sceneId        String?
+  title          String
+  purpose        String    @default("")
+  dueDate        DateTime?
+  estimatedHours Float     @default(1)
+  recurrence     String    @default("none")
+  standard       String    @default("")
+  status         String    @default("待开始")
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  goal           Goal?     @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  dailyTasks     DailyTask[]
+  parent         Action? @relation("ActionHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Action[] @relation("ActionHierarchy")
+  @@index([profileId, parentId])
+}
+
+model RecordNumberSequence {
+  prefix String @id
+  value  Int
+}
+
+model Review {
+  id             String   @id @default(cuid())
+  profileId      String
+  periodStart    DateTime
+  periodEnd      DateTime
+  wins           String   @default("")
+  goalIssue      String   @default("")
+  strategyIssue  String   @default("")
+  executionIssue String   @default("")
+  externalIssue  String   @default("")
+  adjustment     String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model Decision {
+  sceneId        String?
+  visionId       String?
+  goalId         String?
+  signalId       String?
+  id             String           @id @default(cuid())
+  profileId      String
+  title          String
+  context        String           @default("")
+  criteria       String           @default("")
+  facts          String           @default("")
+  assumptions    String           @default("")
+  gaps           String           @default("")
+  selectedOption String           @default("")
+  rationale      String           @default("")
+  risk           String           @default("")
+  reversible     Boolean          @default(true)
+  reviewDate     DateTime?
+  resultReview   String           @default("")
+  status         String           @default("待决定")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  profile        Profile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  options        DecisionOption[]
+}
+
+model DecisionOption {
+  id         String   @id @default(cuid())
+  decisionId String
+  name       String
+  benefit    String   @default("")
+  cost       String   @default("")
+  risk       String   @default("")
+  score      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+}
+
+model AIInstruction {
+  id             String   @id @default(cuid())
+  profileId      String   @unique
+  language       String   @default("中文")
+  answerLength   String   @default("适中")
+  structure      String   @default("先结论，后依据")
+  aiRole         String   @default("提问者、分析者和记录助手")
+  delegate       String   @default("")
+  mustConfirm    String   @default("重要目标、决策和对外行动")
+  privacyOptions String   @default("姓名和联系方式脱敏")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model AISuggestion {
+  id        String   @id @default(cuid())
+  profileId String
+  type      String
+  title     String
+  content   String
+  source    String   @default("规则模板")
+  status    String   @default("待确认")
+  sentScope String   @default("")
+  targetType String  @default("")
+  targetId   String  @default("")
+  payload    String  @default("")
+  sourceTaskId String?
+  sourceFeedbackId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  sourceTask AITask? @relation("TaskSuggestions", fields: [sourceTaskId], references: [id], onDelete: SetNull)
+  sourceFeedback AITaskFeedback? @relation("FeedbackSuggestions", fields: [sourceFeedbackId], references: [id], onDelete: SetNull)
+}
+
+model IdentityCard {
+  id             String   @id @default(cuid())
+  profileId      String   @unique
+  currentVersion Int      @default(0)
+  lengthMode     String   @default("标准")
+  structuredData String   @default("{}")
+  markdown       String   @default("")
+  status         String   @default("草稿")
+  source         String   @default("确定性模板")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  versions       IdentityCardVersion[]
+}
+
+model IdentityCardVersion {
+  id             String   @id @default(cuid())
+  profileId      String
+  cardId         String
+  version        Int
+  lengthMode     String
+  structuredData String
+  markdown       String
+  source         String   @default("确定性模板")
+  status         String   @default("草稿")
+  createdAt      DateTime @default(now())
+  profile        Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  card           IdentityCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, version])
+  @@index([profileId, createdAt])
+}
+
+model ContextPackage {
+  id              String   @id @default(cuid())
+  profileId       String
+  packageNumber   Int
+  version         Int      @default(1)
+  domain          String
+  customDomain    String   @default("")
+  goalId          String?
+  projectId       String?
+  aiRole          String
+  scope           String   @default("标准")
+  options         String   @default("{}")
+  privacyOptions  String   @default("")
+  snapshot        String   @default("{}")
+  markdown        String   @default("")
+  plainText       String   @default("")
+  charCount       Int      @default(0)
+  tokenEstimate   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  goal            Goal?    @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  items           ContextPackageItem[]
+  references      ContextSourceReference[]
+  aiTasks         AITask[]
+
+  @@unique([profileId, packageNumber])
+  @@index([profileId, createdAt])
+}
+
+model ContextPackageItem {
+  id              String   @id @default(cuid())
+  contextPackageId String
+  category        String
+  label           String
+  content         String
+  sourceType      String
+  sourceId        String   @default("")
+  sourceLabel     String   @default("")
+  sourceDocumentKey String @default("")
+  sourceVersion   String   @default("")
+  priority        Int      @default(0)
+  included        Boolean  @default(true)
+  excluded        Boolean  @default(false)
+  redacted        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  contextPackage  ContextPackage @relation(fields: [contextPackageId], references: [id], onDelete: Cascade)
+
+  @@index([contextPackageId, priority])
+}
+
+model ContextSourceReference {
+  id              String   @id @default(cuid())
+  contextPackageId String
+  contextPackageItemId String?
+  sourceType      String
+  sourceId        String   @default("")
+  sourceLabel     String
+  sourceDocumentKey String @default("")
+  sourceVersion   String   @default("")
+  snapshot        String   @default("")
+  createdAt       DateTime @default(now())
+  contextPackage  ContextPackage @relation(fields: [contextPackageId], references: [id], onDelete: Cascade)
+
+  @@index([contextPackageId])
+}
+
+model AITask {
+  id              String   @id @default(cuid())
+  profileId       String
+  contextPackageId String?
+  goalId          String?
+  projectId       String?
+  title           String
+  taskType        String
+  problem         String   @default("")
+  whyNow          String   @default("")
+  aiRole          String
+  permission      String   @default("L1")
+  permissionOverrideReason String @default("")
+  instructions    String   @default("")
+  deliverables    String   @default("")
+  outputFormat    String   @default("")
+  deadline        DateTime?
+  acceptanceCriteria String @default("")
+  allowedOperations String @default("")
+  mustConfirmOperations String @default("")
+  forbiddenOperations String @default("")
+  riskLevel       String   @default("低")
+  requireUnderstandingCheck Boolean @default(false)
+  status          String   @default("草稿")
+  promptSnapshot  String   @default("")
+  contextSnapshot String   @default("")
+  privacyPreview  String   @default("")
+  auditLog        String   @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  contextPackage  ContextPackage? @relation(fields: [contextPackageId], references: [id], onDelete: SetNull)
+  goal            Goal?    @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  feedbacks       AITaskFeedback[]
+  suggestions     AISuggestion[] @relation("TaskSuggestions")
+
+  @@index([profileId, status, updatedAt])
+}
+
+model AITaskFeedback {
+  id              String   @id @default(cuid())
+  taskId          String
+  understandingScore Int?
+  constraintScore Int?
+  executableScore Int?
+  correctContent  String   @default("")
+  incorrectContent String  @default("")
+  missingInformation String @default("")
+  violatedConstraints String @default("")
+  adopted          Boolean @default(false)
+  actualAction     String  @default("")
+  actualResult     String  @default("")
+  correctionRequest String @default("")
+  preferenceUpdate String @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  task            AITask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  suggestions     AISuggestion[] @relation("FeedbackSuggestions")
+  correctionRecords CorrectionRecord[]
+
+  @@index([taskId, createdAt])
+}
+
+model CorrectionRecord {
+  id              String   @id @default(cuid())
+  profileId       String
+  feedbackId      String?
+  category        String
+  target          String   @default("")
+  content         String
+  priority        Int      @default(1)
+  status          String   @default("已确认")
+  source          String   @default("用户确认")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  profile         Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  feedback        AITaskFeedback? @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+
+  @@index([profileId, status, updatedAt])
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  profileId   String
+  documentKey String
+  title       String
+  content     String
+  source      String   @default("结构化数据")
+  createdAt   DateTime @default(now())
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, documentKey, createdAt])
+}
+
+model DailyPlan {
+  id        String   @id @default(cuid())
+  profileId String
+  date      String
+  input     String   @default("")
+  source    String   @default("规则编排")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tasks     DailyTask[]
+  report    DailyReport?
+
+  @@unique([profileId, date])
+}
+
+model DailyTask {
+  id           String    @id @default(cuid())
+  planId       String
+  actionId     String?
+  sceneId      String?
+  title        String
+  lane         String
+  priority     Int       @default(2)
+  orchestration String   @default("{}")
+  dueAt        DateTime?
+  notes        String    @default("")
+  result       String    @default("")
+  completedAt  DateTime?
+  syncedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  plan         DailyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  action       Action?   @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  steps        DailyStep[]
+  checkpoints  DailyCheckpoint[]
+
+  @@unique([planId, actionId])
+}
+
+model DailyStep {
+  id           String    @id @default(cuid())
+  taskId       String
+  position     Int
+  title        String
+  assignee     String
+  agentId      String?
+  estimatedMinutes Int   @default(15)
+  status       String    @default("pending")
+  notes        String    @default("")
+  result       String    @default("")
+  blockedReason String   @default("")
+  attempt      Int       @default(0)
+  currentRunId String?
+  completedAt  DateTime?
+  updatedAt    DateTime  @updatedAt
+  task         DailyTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agent        DailyAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  runs         DailyRun[]
+  timers       DailyTimer[]
+
+  @@unique([taskId, position])
+}
+
+model DailyCheckpoint {
+  id        String    @id @default(cuid())
+  taskId    String
+  title     String
+  dueAt     DateTime
+  done      Boolean   @default(false)
+  task      DailyTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model DailyAgent {
+  id        String    @id @default(cuid())
+  profileId String
+  name      String
+  role      String
+  model     String    @default("")
+  prompt    String
+  enabled   Boolean   @default(true)
+  timeoutSeconds Int  @default(120)
+  capabilities String @default("{}")
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  steps     DailyStep[]
+}
+
+model DailyAsset {
+  id           String @id @default(cuid())
+  profileId    String
+  kind         String
+  name         String
+  description  String @default("")
+  instructions String @default("")
+  adapter      String @default("guidance")
+  enabled      Boolean @default(true)
+  builtin      Boolean @default(false)
+  profile      Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, kind])
+}
+
+model DailyRun {
+  id        String    @id @default(cuid())
+  stepId    String
+  attempt   Int
+  status    String    @default("queued")
+  slot      Int?      @unique
+  leaseToken String?
+  leaseExpiresAt DateTime?
+  leaseUntilSeconds Int?
+  input     String
+  config    String
+  output    String    @default("")
+  error     String    @default("")
+  durationMs Int      @default(0)
+  promptTokens Int?
+  completionTokens Int?
+  createdAt DateTime  @default(now())
+  startedAt DateTime?
+  finishedAt DateTime?
+  step      DailyStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@unique([stepId, attempt])
+  @@index([status, createdAt])
+}
+
+model DailyTimer {
+  id        String    @id @default(cuid())
+  stepId    String
+  startedAt DateTime
+  endedAt   DateTime?
+  step      DailyStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+}
+
+model DailyReport {
+  id        String    @id @default(cuid())
+  planId    String    @unique
+  metrics   String
+  markdown  String
+  reflection String  @default("")
+  generatedAt DateTime @default(now())
+  plan      DailyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+}
+
+model DailyControl {
+  profileId String    @id
+  heartbeat DateTime?
+  maintenance Boolean @default(false)
+  maintenanceUntil DateTime?
+  maintenanceToken String?
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}

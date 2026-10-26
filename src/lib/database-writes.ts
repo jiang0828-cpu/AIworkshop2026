@@ -5,6 +5,7 @@ import { prismaModels } from "./prisma-models";
 import { atomic } from "./strategy/service";
 
 type Statement = { sql: string; values: Array<string | number | null> };
+export type SyncRow = { table: string; data: Record<string, string | number | null> };
 // Keep metadata as a static generated module. Both Prisma clients expose DMMF
 // during local development, but edge runtimes intentionally reject Prisma.dmmf.
 const models = prismaModels;
@@ -19,11 +20,12 @@ const scalar = (value: unknown): string | number | null => {
 
 // D1 has no interactive Prisma transactions. Stage the existing scalar restore
 // operations, including defaults, and commit them together in one D1 batch.
-export async function writeTransaction<T>(db: PrismaClient, operation: (tx: Prisma.TransactionClient) => Promise<T>, forceBatch = false): Promise<T> {
+export async function writeTransaction<T>(db: PrismaClient, operation: (tx: Prisma.TransactionClient) => Promise<T>, forceBatch = false, capture?: (rows: SyncRow[]) => void): Promise<T> {
   if (!forceBatch && !isCloudflareD1Runtime()) return db.$transaction(operation, { timeout: 600000 });
   const statements: Statement[] = [];
   const inserted = new Map<string, any[]>(), cleared = new Set<string>();
   const delegates: Record<string, any> = {};
+  const captured = new Map<string, SyncRow>();
   for (const model of models) {
     const key = model.name[0].toLowerCase() + model.name.slice(1);
     const actual = (db as any)[key];
@@ -62,6 +64,13 @@ export async function writeTransaction<T>(db: PrismaClient, operation: (tx: Pris
         const condition = whereSql(where, values);
         statements.push({ sql: `UPDATE ${quote(model.name)} SET ${entries.map(([field]) => `${quote(field)}=?`).join(",")} WHERE ${condition}`, values });
       }
+      if (capture) {
+        const current = [...captured.values()].find(row => row.table === model.name && Object.entries(where).every(([key, value]) => row.data[key] === value));
+        const previous = current?.data || await actual.findFirst({ where });
+        if (!previous) throw new Error("同步记录不存在");
+        const full = Object.fromEntries(fields.map(field => [field.name, scalar(payload[field.name] !== undefined ? payload[field.name] : previous[field.name])]));
+        captured.set(`${model.name}:${full.id || full.profileId}`, { table: model.name, data: full });
+      }
       return payload;
     };
     delegates[key] = {
@@ -84,6 +93,7 @@ export async function writeTransaction<T>(db: PrismaClient, operation: (tx: Pris
         if (!entries.every(([field]) => fieldNames.has(field))) throw new Error("导入含未知字段");
         statements.push({ sql: `INSERT INTO ${quote(model.name)} (${entries.map(([field]) => quote(field)).join(",")}) VALUES (${entries.map(() => "?").join(",")})`, values: entries.map(([, value]) => scalar(value)) });
         inserted.set(key, [...(inserted.get(key) || []), payload]);
+        if (capture) captured.set(`${model.name}:${payload.id || payload.profileId}`, { table: model.name, data: Object.fromEntries(entries.map(([field, value]) => [field, scalar(value)])) });
         return payload;
       },
       deleteMany: async ({ where }: any = {}) => {
@@ -106,6 +116,7 @@ export async function writeTransaction<T>(db: PrismaClient, operation: (tx: Pris
     };
   }
   const result = await operation(delegates as Prisma.TransactionClient);
-  await atomic(db, statements);
+  if (capture) capture([...captured.values()]);
+  else await atomic(db, statements);
   return result;
 }

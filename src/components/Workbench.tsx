@@ -8,6 +8,7 @@ import DailyCollaboration from "./DailyCollaboration";
 import MyWorkbench from "./MyWorkbench";
 import WorkspaceBackup, { BackupExportButton, useWorkspaceBackup } from "./WorkspaceBackup";
 import SuperAdminSettings from "./SuperAdminSettings";
+import CloudSyncControl from "./CloudSyncControl";
 import SelfModule from "./strategy/SelfModule";
 import ProfileSceneSections from "./strategy/ProfileSceneSections";
 import SituationModule from "./strategy/SituationModule";
@@ -452,6 +453,7 @@ export default function Workbench() {
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-500">
             <BackupExportButton backup={backup} compact />
+            <CloudSyncControl compact />
             <span className="hidden sm:inline">本地数据已保存</span>
             <span className="h-2 w-2 rounded-full bg-[#73a27f]" />
           </div>
@@ -2025,6 +2027,7 @@ function SettingsView({
         description="偏好保存在本地。API 密钥永远不进入浏览器、数据库或导出文件。"
       />
       <WorkspaceBackup backup={backup} reload={load} />
+      <CloudSyncControl />
       <div className="mb-5">
         <SuperAdminSettings />
       </div>

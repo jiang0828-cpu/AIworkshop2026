@@ -11,7 +11,7 @@ function challenge(message = "需要验证后才能访问 AI 工作台") {
 
 export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/api/auth/login") return NextResponse.next();
-  if (request.nextUrl.pathname === "/api/sync/import") {
+  if (["/api/sync/import", "/api/sync/transfer"].includes(request.nextUrl.pathname)) {
     const { token, runningOnCloudflare } = getCloudSyncConfig();
     if (runningOnCloudflare && isCloudSyncAuthorized(request.headers.get("x-workbench-sync-token"), token)) return NextResponse.next();
   }

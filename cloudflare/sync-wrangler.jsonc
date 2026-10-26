@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "ai-workbench-sync",
+  "main": "sync-worker.ts",
+  "compatibility_date": "2026-08-29",
+  "d1_databases": [{
+    "binding": "WORKBENCH_DB",
+    "database_name": "ai-workbench-data",
+    "database_id": "12b95e03-5dd4-46bf-a0d7-0990f3a86e80"
+  }]
+}

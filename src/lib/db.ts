@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaD1 } from "@prisma/adapter-d1";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { PROFILE_ID } from "./profile-id";
+export { PROFILE_ID } from "./profile-id";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -33,8 +35,6 @@ export async function getDb(): Promise<PrismaClient> {
   if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = client;
   return client;
 }
-
-export const PROFILE_ID = "local-profile";
 
 export async function ensureProfile() {
   const db = await getDb();

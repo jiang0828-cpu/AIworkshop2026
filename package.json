@@ -36,7 +36,9 @@
     "cf:deploy": "node scripts/prepare-worker-deploy.mjs && opennextjs-cloudflare deploy",
     "cf:d1:migrate": "wrangler d1 migrations apply ai-workbench-data --remote",
     "cf:daily:check": "prisma generate --generator cloudflareClient && wrangler deploy --config cloudflare/daily-wrangler.jsonc --dry-run --outdir .wrangler/daily-build",
-    "cf:daily:deploy": "wrangler deploy --config cloudflare/daily-wrangler.jsonc"
+    "cf:daily:deploy": "wrangler deploy --config cloudflare/daily-wrangler.jsonc",
+    "cf:sync:check": "wrangler deploy --config cloudflare/sync-wrangler.jsonc --dry-run",
+    "cf:sync:deploy": "wrangler deploy --config cloudflare/sync-wrangler.jsonc"
   },
   "dependencies": {
     "@prisma/adapter-d1": "^6.19.0",

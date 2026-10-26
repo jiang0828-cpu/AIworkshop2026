@@ -8,6 +8,7 @@ import { recordAncestors } from "@/lib/record-hierarchy";
 import RadarReferences from "./radar/References";
 import GoalProjectPlanner from "./GoalProjectPlanner";
 import ExecutionTree from "./ExecutionTree";
+import ExecutionExport from "./ExecutionExport";
 import DeliveryMeta from "./DeliveryMeta";
 import { AIAnalysis, Button, DetailPane, EditDialog, Empty, Heading, Link, matchesScene, SceneFilter, SourceLinks, useStrategy, type ModuleProps, type Row } from "./Shared";
 
@@ -49,7 +50,7 @@ export default function GoalsModule({ props }: { props: ModuleProps }) {
     setDocument({ name: project.name, content });
   };
   return <>
-    <Heading title="目标 → 项目 → 任务" action={<Button primary onClick={() => props.open({ type: "goal", item: { sceneId: scene !== "all" && scene !== "unclassified" ? scene : null } })}><Plus size={15} />新建目标</Button>} />
+    <Heading title="目标 → 项目 → 任务" action={<div className="flex flex-wrap gap-2"><ExecutionExport props={props} scenes={view.scenes} filters={{ scene, horizon, status, query, incomplete }} selected={selected} /><Button primary onClick={() => props.open({ type: "goal", item: { sceneId: scene !== "all" && scene !== "unclassified" ? scene : null } })}><Plus size={15} />新建目标</Button></div>} />
     <div className="mb-5 flex min-w-0 flex-wrap items-center gap-3">
       <SceneFilter inline view={view} value={scene} onChange={(scene) => navigate({ scene })} />
       <select aria-label="按目标周期筛选" className="!w-auto max-w-full" value={horizon} onChange={(event) => setHorizon(event.target.value)}><option value="all">全部周期</option>{horizons.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="按执行状态筛选" className="!w-auto max-w-full" value={status} onChange={event => setStatus(event.target.value)}><option value="all">全部状态</option><option value="open">未完成</option>{[...new Set([...goals, ...projects, ...actions].map(row => row.status).filter(Boolean))].map(value => <option key={value} value={value}>{value}</option>)}</select><label className="flex items-center gap-2 text-xs"><input type="checkbox" className="!w-auto" checked={incomplete} onChange={event => setIncomplete(event.target.checked)} />仅看待完善</label><label className="flex min-w-0 flex-1 items-center gap-2 sm:min-w-48"><Search size={16} className="shrink-0 text-slate-400" /><input aria-label="搜索目标项目任务" placeholder="搜索名称或完成标准" value={query} onChange={event => setQuery(event.target.value)} /></label>{(horizon !== "all" || status !== "all" || incomplete || query) && <button title="清空筛选" aria-label="清空筛选" onClick={() => { setHorizon("all"); setStatus("all"); setQuery(""); setIncomplete(false); }}><X size={16} /></button>}</div>

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { PrismaClient } from "@prisma/client";
 import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { blockStep, finishStep, generateReport, getDailyView, importActions, initializeDaily, ownTask, pauseStep, PROFILE, proposeTimes, rejectStep, replanTask, saveAgent, saveTasks, saveTimes, startStep, startTask, syncAction, timeReservations, validateAffiliation, withDailyLock } from "./service";
@@ -56,6 +56,35 @@ function humanDraft(title: string, date: string) {
   return { ...draft, lane: "A" as const, steps: draft.steps.map((step) => ({ ...step, assignee: "human" as const, agentId: null })) };
 }
 describe("持久化协同执行", () => {
+  it.skipIf(!process.env.WORKSPACE_BACKUP_FILE)("真实完整备份可恢复到隔离数据库（可选演练）", async () => {
+    const backup = JSON.parse(readFileSync(process.env.WORKSPACE_BACKUP_FILE!, "utf8"));
+    const response = await importFullBackup(new Request("http://localhost/api/backup", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(backup),
+    }));
+    expect(response.status).toBe(200);
+    expect(await db.action.count({ where: { profileId: PROFILE } })).toBe(backup.data.actions?.length || 0);
+    expect(await db.project.count({ where: { profileId: PROFILE } })).toBe(backup.data.projects?.length || 0);
+    expect(await db.documentVersion.count({ where: { profileId: PROFILE } })).toBe(backup.data.documentVersions?.length || 0);
+    expect(await db.executionPlan.count({ where: { profileId: PROFILE } })).toBe(backup.data.strategy?.executionPlans?.length || 0);
+    expect(await db.dailyTask.count({ where: { plan: { profileId: PROFILE } } })).toBe(
+      (backup.data.dailyCollaboration?.plans || []).reduce((count: number, plan: { tasks: unknown[] }) => count + plan.tasks.length, 0));
+  }, 600000);
+  it("完整导出包含当前档案和协同记录，使用带日期的文件名且不缓存", async () => {
+    const task = await addTask("备份测试任务");
+    await db.profile.create({ data: { id: "backup-other-profile", name: "不可导出" } });
+    await db.action.create({ data: { profileId: "backup-other-profile", title: "不可导出" } });
+    const response = await exportFullBackup();
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Content-Disposition")).toMatch(/^attachment; filename="ai-workbench-backup-\d{8}-\d{6}\.json"$/);
+    const backup = await response.json();
+    expect(backup).toMatchObject({ format: "ai-workbench-backup", version: 1 });
+    expect(backup.data.id).toBe(PROFILE);
+    expect(backup.data.actions.some((action: { profileId: string }) => action.profileId !== PROFILE)).toBe(false);
+    expect(backup.data.strategy.scenes).toHaveLength(7);
+    expect(backup.data.dailyCollaboration.plans[0].tasks[0].id).toBe(task.id);
+    expect(backup.data.dailyCollaboration.agents.length).toBeGreaterThan(0);
+    expect(backup.data.dailyCollaboration.assets.length).toBeGreaterThan(0);
+  });
   it.each([false, true])("每日完成工作复盘：验收、归属、去重和完整备份恢复（batch=%s）", async (batch) => {
     forceBatch = batch;
     const initial = await (await readWorkbenchData()).json();

@@ -57,7 +57,8 @@
     ".next-upload-deploy-20261011/types/**/*.ts",
     ".next-workbench-audit-cf/types/**/*.ts",
     ".next/types/**/*.ts",
-    "next-env.d.ts"
+    "next-env.d.ts",
+    ".next-workspace-backup-dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -29,7 +29,9 @@ node --env-file=.env --import tsx scripts/enable-daily-news.ts
 
 ### Windows 自动运行（2026-10-15）
 
-已在本机注册 `MyAICube-LocalScheduler` Windows 任务：当前用户登录后启动，并每分钟检查调度器是否仍在运行；不会重复拉起已有的完整调度器。任务以当前用户普通权限、隐藏窗口运行，不保存密码或密钥。
+已在本机注册 `MyAICube-LocalScheduler` Windows 任务：当前用户登录后启动，并每 5 分钟检查调度器是否仍在运行；不会重复拉起已有的完整调度器。2026-10-19 起，任务改为通过 Windows 无控制台宿主 `wscript.exe` 执行 `scripts/ensure-local-scheduler.js`，以窗口样式 `0` 启动 PowerShell 保活脚本，避免直接运行 PowerShell 时周期弹出终端。不保存密码或密钥。
+
+安装脚本更新前将原任务 XML 备份到 `data/`，已有任务保留当前用户身份。任务工作目录为项目根目录，启动器结果写入 `data/local-scheduler-launcher.log`；它只检查/恢复原调度进程，不创建额外的采集任务。仅设置 `-NonInteractive` 或 `-WindowStyle Hidden` 无法保证不创建控制台窗口。此方案需要 Windows Script Host 可用；通过 `Get-ScheduledTaskInfo` 检查结果为 `0`，并确认启动器日志包含 `host=wscript hidden=true exit=0`。
 
 ```powershell
 node --env-file=.env --import tsx scripts/enable-daily-news.ts --ready-by-seven

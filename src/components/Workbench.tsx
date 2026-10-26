@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AIUseCenter from "./AIUseCenter";
 import DailyCollaboration from "./DailyCollaboration";
 import MyWorkbench from "./MyWorkbench";
+import WorkspaceBackup, { BackupExportButton, useWorkspaceBackup } from "./WorkspaceBackup";
+import SuperAdminSettings from "./SuperAdminSettings";
 import SelfModule from "./strategy/SelfModule";
 import ProfileSceneSections from "./strategy/ProfileSceneSections";
 import SituationModule from "./strategy/SituationModule";
@@ -286,6 +288,7 @@ export default function Workbench() {
     setToast(message);
     window.setTimeout(() => setToast(""), 3400);
   }, []);
+  const backup = useWorkspaceBackup(notify);
   const navigateDirect = useCallback((next: Navigation, push = true) => {
     if (!["decisions", "aiUse"].includes(next.section) && !nav.some((item) => item.key === next.section)) return;
     const params = new URLSearchParams();
@@ -448,6 +451,7 @@ export default function Workbench() {
             {active === "decisions" ? "目标与执行" : active === "aiUse" ? "AI档案中心" : nav.find((item) => item.key === active)?.label}
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-500">
+            <BackupExportButton backup={backup} compact />
             <span className="hidden sm:inline">本地数据已保存</span>
             <span className="h-2 w-2 rounded-full bg-[#73a27f]" />
           </div>
@@ -480,7 +484,7 @@ export default function Workbench() {
           {active === "documents" && <div id="archive-panel" role="tabpanel" aria-labelledby="archive-tab-documents"><Documents data={data} notify={notify} /></div>}{" "}
           {active === "aiUse" && <div id="archive-panel" role="tabpanel" aria-labelledby="archive-tab-aiUse"><AIUseCenter key={`${target.recordId || ""}:${target.tab || ""}:${target.projectId || ""}`} data={data} notify={notify} reload={() => load(false)} initialTaskId={target.recordId} initialDraft={aiDraft || (target.projectId ? { projectId: target.projectId, goalId: target.goalId || "" } : undefined)} initialTab={target.tab} /></div>}{" "}
           {active === "settings" && (
-            <SettingsView data={data} save={save} notify={notify} load={load} />
+            <SettingsView data={data} save={save} notify={notify} load={load} backup={backup} />
           )}{" "}
         </div>
       </main>
@@ -1981,11 +1985,13 @@ function SettingsView({
   save,
   notify,
   load,
+  backup,
 }: {
   data: Data | null;
   save: (type: string, payload: Item, id?: string) => Promise<void>;
   notify: (message: string) => void;
   load: () => Promise<void>;
+  backup: ReturnType<typeof useWorkspaceBackup>;
 }) {
   const [ai, setAi] = useState<Item | null>(data?.aiInstruction || {});
   useEffect(() => {
@@ -1998,32 +2004,6 @@ function SettingsView({
       "instruction",
       Object.fromEntries(new FormData(event.currentTarget)),
     );
-  };
-  const inputRef = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const json = JSON.parse(await file.text());
-      if (
-        !window.confirm(
-          "导入会替换当前本地档案、目标、行动、决策、建议和文档版本。确定继续吗？",
-        )
-      ) {
-        event.target.value = "";
-        return;
-      }
-      const res = await fetch("/api/backup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(json),
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error);
-      notify("基础档案已导入");
-      await load();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "导入失败");
-    }
   };
   const clear = async () => {
     if (!window.confirm("确定清空全部本地数据吗？此操作不可撤销。")) return;
@@ -2044,6 +2024,10 @@ function SettingsView({
         title="让工作台更像你的工作台"
         description="偏好保存在本地。API 密钥永远不进入浏览器、数据库或导出文件。"
       />
+      <WorkspaceBackup backup={backup} reload={load} />
+      <div className="mb-5">
+        <SuperAdminSettings />
+      </div>
       <div className="grid gap-5 lg:grid-cols-2">
         <Panel>
           <PanelHeading title="AI 功能状态" />
@@ -2131,32 +2115,10 @@ function SettingsView({
           </form>
         </Panel>
         <Panel>
-          <PanelHeading title="数据备份与隐私" />
-          <p className="text-sm leading-6 text-slate-500">
-            导出的 JSON 包含结构化档案和文档版本，不包含 API
-            密钥。导入前会校验格式，并完整恢复结构化记录；导入会替换当前本地数据。
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <a
-              href="/api/backup"
-              className="inline-flex items-center gap-2 rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-mist"
-            >
-              <Download size={15} />
-              导出 JSON
-            </a>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-mist">
-              <Upload size={15} />
-              导入 JSON
-              <input
-                type="file"
-                accept="application/json"
-                onChange={inputRef}
-                className="hidden"
-              />
-            </label>
-          </div>
+          <PanelHeading title="数据管理" />
           <button
             onClick={clear}
+            disabled={Boolean(backup.busy)}
             className="mt-6 inline-flex items-center gap-2 text-sm text-red-600 hover:underline"
           >
             <Trash2 size={15} />

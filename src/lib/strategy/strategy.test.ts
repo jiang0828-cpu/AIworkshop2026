@@ -875,6 +875,65 @@ beforeEach(async () => {
 afterEach(() => { cloud = false; vi.unstubAllGlobals(); });
 afterAll(async () => { await db?.$disconnect(); sqlite?.close(); if (directory && directory.startsWith(tmpdir())) rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
+describe("拖动任务调整所属项目", () => {
+  async function setupMove() {
+    await goal("move-goal");
+    await db.project.create({ data: { id: "move-from", profileId, name: "原项目" } });
+    await db.project.create({ data: { id: "move-to", profileId, name: "目标项目", goalId: "move-goal", sceneId: `${profileId}-scene-0` } });
+    await db.action.create({ data: { id: "move-action", profileId, projectId: "move-from", title: "保留任务内容", purpose: "保留目的", standard: "保留标准", status: "已完成", completedAt: new Date("2026-10-15T08:00:00Z"), dueDate: new Date("2026-10-17T00:00:00Z"), recurrence: "weekly", estimatedHours: 1 / 60, sceneId: `${profileId}-scene-1` } });
+    return db.action.findUniqueOrThrow({ where: { id: "move-action" } });
+  }
+  const move = (data: Record<string, unknown> = {}) => strategyPost(request({ action: "action-move", data: { actionId: "move-action", projectId: "move-to", fromProjectId: "move-from", fromParentId: null, ...data } }));
+  it.each([false, true])("仅修改归属，保留内容、显式场景、日期、完成状态及每日记录，重复操作不重复创建（D1=%s）", async d1 => {
+    const before = await setupMove();
+    const plan = await db.dailyPlan.create({ data: { profileId, date: "2026-10-16" } });
+    const daily = await db.dailyTask.create({ data: { planId: plan.id, actionId: before.id, title: "历史每日任务", lane: "A", result: "保留结果" } });
+    cloud = d1;
+    expect((await move()).status).toBe(200);
+    const after = await db.action.findUniqueOrThrow({ where: { id: before.id } });
+    expect(after).toEqual({ ...before, projectId: "move-to", goalId: "move-goal", updatedAt: after.updatedAt });
+    expect(await db.dailyTask.findUnique({ where: { id: daily.id } })).toEqual(daily);
+    expect(await (await move()).json()).toEqual({ moved: 0 });
+    expect(await db.action.count()).toBe(1);
+  });
+  it.each([false, true])("多级任务一起迁移，移出原父任务，保留内部层级及其他兄弟任务（D1=%s）", async d1 => {
+    await setupMove();
+    await db.action.create({ data: { id: "old-parent", profileId, projectId: "move-from", title: "原父任务" } });
+    await db.action.update({ where: { id: "move-action" }, data: { parentId: "old-parent" } });
+    await db.action.create({ data: { id: "move-child", profileId, projectId: "move-from", parentId: "move-action", title: "子任务" } });
+    await db.action.create({ data: { id: "move-grandchild", profileId, projectId: "move-from", parentId: "move-child", title: "孙任务" } });
+    cloud = d1;
+    expect(await (await move({ fromParentId: "old-parent" })).json()).toEqual({ moved: 3 });
+    expect(await db.action.findUnique({ where: { id: "move-action" } })).toMatchObject({ projectId: "move-to", goalId: "move-goal", parentId: null });
+    expect(await db.action.findUnique({ where: { id: "move-child" } })).toMatchObject({ projectId: "move-to", goalId: "move-goal", parentId: "move-action" });
+    expect(await db.action.findUnique({ where: { id: "move-grandchild" } })).toMatchObject({ projectId: "move-to", parentId: "move-child" });
+    expect(await db.action.findUnique({ where: { id: "old-parent" } })).toMatchObject({ projectId: "move-from", goalId: null });
+  });
+  it.each([false, true])("归属过期、跨档案和额外字段拒绝，不改动原任务（D1=%s）", async d1 => {
+    const before = await setupMove();
+    await db.profile.create({ data: { id: "foreign-move" } });
+    await db.project.create({ data: { id: "foreign-move-project", profileId: "foreign-move", name: "外部" } });
+    await db.action.create({ data: { id: "foreign-move-action", profileId: "foreign-move", title: "外部" } });
+    cloud = d1;
+    for (const data of [{ fromProjectId: null }, { projectId: "foreign-move-project" }, { actionId: "foreign-move-action" }, { title: "不允许覆盖" }, { projectId: "missing" }]) {
+      expect((await move(data)).status).toBe(400);
+      expect(await db.action.findUnique({ where: { id: before.id } })).toEqual(before);
+    }
+  });
+  it.each([false, true])("迁移中途失败时整体回滚（D1=%s）", async d1 => {
+    const before = await setupMove();
+    await db.action.create({ data: { id: "move-child", profileId, parentId: before.id, projectId: "move-from", title: "子任务" } });
+    const child = await db.action.findUniqueOrThrow({ where: { id: "move-child" } });
+    sqlite.exec("CREATE TRIGGER reject_action_move BEFORE UPDATE OF projectId ON Action WHEN OLD.id='move-child' BEGIN SELECT RAISE(ABORT, 'test move failure'); END;");
+    cloud = d1;
+    try {
+      expect((await move()).status).toBe(400);
+      expect(await db.action.findUnique({ where: { id: before.id } })).toEqual(before);
+      expect(await db.action.findUnique({ where: { id: child.id } })).toEqual(child);
+    } finally { sqlite.exec("DROP TRIGGER reject_action_move"); }
+  });
+});
+
 describe("任务周期与分钟投入", () => {
   it.each([false, true])("保存、部分更新、备份与旧格式兼容（D1=%s）", async d1 => {
     cloud = d1;

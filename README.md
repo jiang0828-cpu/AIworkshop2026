@@ -2,11 +2,19 @@
 
 一个本地优先的中文个人定义与 AI 协作记录工具。结构化数据保存在 SQLite，五份 Markdown 档案可以随时重新生成、编辑、查看历史和下载。
 
+## 产品与使用文档
+
+- [产品需求文档](docs/产品需求文档.md)：产品定位、模块职责、业务流程、数据规则与验收标准。
+- [技术文档](docs/技术文档.md)：架构、数据模型、API、后台队列、环境配置、迁移与部署。
+- [使用说明文档](docs/使用说明文档.md)：日常操作、AI 启动、人工验收、计划复盘、备份和常见问题。
+
+以上文档按 2026-10-15 的代码现状整理；历史专项方案与当前实现有差异时，优先核对这三份文档及实际代码。
+
 ## 代码与发布
 
 - GitHub：<https://github.com/jiang0828-cpu/AIworkshop2026>
 - 线上工作台：<https://ai-workbench.jianghaohan0828.workers.dev>
-- 最近发布记录：[2026-10-15](docs/deployment-2026-10-15.md)。网站与后台调度器使用 Cloudflare Workers，线上数据使用 D1，本地数据使用 SQLite。
+- 最近发布记录：[2026-10-26](docs/deployment-2026-10-26.md)。网站与后台调度器使用 Cloudflare Workers，线上数据使用 D1，本地数据使用 SQLite。
 
 仓库仅备份程序代码、数据库结构与迁移、测试和技术文档。实际数据库、个人资料、完整导出备份、环境变量与密钥保留在本地或 Cloudflare secrets，不提交到仓库。克隆后按下方说明配置环境并初始化数据库。推送代码不会自动部署；发布仍使用现有 Cloudflare 命令。
 
@@ -22,7 +30,7 @@
 
 ## 每日任务协同
 
-“行动与复盘”下方的“每日任务协同”支持文本待办编排、A/B/混合任务、人工计时、AI 后台并行、人工验收、检查点与每日复盘。沿用 SQLite/D1；本地运行 `npm run daily:worker` 启动持续后台执行。支持关联已有行动、JSON 备份和 Markdown 日报。完整运行及云端调度说明见 [每日任务协同](docs/每日任务协同.md)。
+“每日任务协同”支持文本待办编排、A/B/混合任务、人工计时、AI 后台并行、人工验收、检查点与每日复盘。沿用 SQLite/D1；本地运行 `npm run daily:worker` 启动持续后台执行。支持关联已有行动、JSON 备份和 Markdown 日报。操作和最新执行边界见 [使用说明](docs/使用说明文档.md)，早期专项说明见 [每日任务协同](docs/每日任务协同.md)。
 
 ## 本地运行
 
@@ -40,14 +48,14 @@ npm run dev
 
 ## 环境变量
 
-`.env.example` 包含全部变量：
+从 `.env.example` 开始配置；其他可选变量及云端配置见 [技术文档](docs/技术文档.md)：
 
 - `DATABASE_URL`：SQLite 文件位置，默认 `file:../data/ai-workbench.db`（相对于 `prisma/schema.prisma`）。
 - `AI_API_KEY`：可选的服务端 OpenAI-compatible API key。不会发送到浏览器、数据库或备份文件。
 - `AI_BASE_URL`：可选 API 地址，默认 `https://api.openai.com/v1`。
 - `AI_MODEL`：可选模型名，默认 `deepseek-reasoner`；DeepSeek 推理模式建议使用该模型。
 
-没有配置 AI key 时，访谈、建议和分析按钮使用规则模板，其他表单、文档和导出功能不受影响。
+没有配置 AI key 时，部分功能（如每日编排）可使用规则回退；自我认知等真实模型功能会提示配置或调用错误，不会全部自动改用模板。手动表单、文档和导出仍可使用。
 
 ## 数据和导出
 
@@ -65,7 +73,7 @@ npm run db:seed      # 创建本地单用户档案和 AI 偏好
 npm run db:studio    # Prisma Studio
 ```
 
-`db:migrate` 使用 Prisma `migrate diff` 生成与 Schema 一致的 SQL，再由 Node 24 内置 SQLite 执行。这是本地初始化脚本；应用运行时仍由 Prisma Client 访问数据库。
+`db:migrate` 对已有 SQLite 先生成快照，再执行 Prisma Client 生成、`db push` 和后续初始化脚本。全新安装可按上述步骤执行；现有数据库升级应先备份并核对相应增量迁移，详见 [技术文档](docs/技术文档.md)。应用运行时仍由 Prisma Client 访问数据库。
 
 ## 隐私边界
 

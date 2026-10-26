@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
-import { CheckCheck, ChevronDown, ChevronRight, Flag, Folder, ListChecks, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCheck, ChevronDown, ChevronRight, Flag, Folder, GripVertical, ListChecks, Plus } from "lucide-react";
 import { executionTree, missingTreeFields, type TreeFilters, type TreeRecord } from "@/lib/execution-tree";
 import { goalAncestors, hierarchyIssue, sortGoals } from "@/lib/goal-hierarchy";
 import { recordAncestors } from "@/lib/record-hierarchy";
-import { Button, Empty, type ModuleProps, type Row } from "./Shared";
+import { Button, Empty, useStrategy, type ModuleProps, type Row } from "./Shared";
 import type { StrategyView } from "@/lib/strategy/shared";
 import DeliveryMeta from "./DeliveryMeta";
 import TaskSchedule from "./TaskSchedule";
@@ -18,6 +18,20 @@ export default function ExecutionTree({ props, view, filters, fallback, selected
   const tree = executionTree(goals, projects, actions, fallback, filters);
   const filtering = filters.query.trim() !== "" || filters.status !== "all" || filters.horizon !== "all" || filters.incomplete || filters.scene !== "all";
   const [expanded, setExpanded] = useState<Record<string, boolean>>({}), [allOpen, setAllOpen] = useState<boolean | null>(null);
+  const [dragged, setDragged] = useState<TreeRecord | null>(null), [dropTarget, setDropTarget] = useState<string | null>(null);
+  const draggedRef = useRef<TreeRecord | null>(null);
+  const { post, working } = useStrategy(props);
+  const moveToProject = async (task: TreeRecord, project: TreeRecord) => {
+    draggedRef.current = null; setDragged(null); setDropTarget(null);
+    const result = await post("action-move", { actionId: task.id, projectId: project.id,
+      fromProjectId: task.projectId || null, fromParentId: task.parentId || null });
+    if (!result) return;
+    setExpanded(current => ({ ...current, ...Object.fromEntries([
+      ...recordAncestors(project, projects).map(row => `project:${row.id}`), `project:${project.id}`,
+      ...goals.filter(row => row.id === project.goalId).flatMap(row => [...goalAncestors(row, goals), row].map(item => `goal:${item.id}`)),
+    ].map(key => [key, true])) }));
+    props.notify(result.moved ? `已移入项目“${project.name}”${result.moved > 1 ? `（含 ${result.moved - 1} 个子任务）` : ""}` : "任务已在该项目下");
+  };
   useEffect(() => { setExpanded({}); setAllOpen(null); }, [filters.scene, filters.query, filters.status, filters.horizon, filters.incomplete]);
   useEffect(() => {
     const project = projects.find(row => row.id === props.target.projectId);
@@ -42,8 +56,14 @@ export default function ExecutionTree({ props, view, filters, fallback, selected
     const key = `action:${row.id}`, open = openFor(key);
     const children = actions.filter(item => tree.actionParents.get(item.id) === row.id);
     return <div key={key} data-node-type="action" data-node-id={row.id} className="min-w-0 border-t border-line">
-      <div className="flex min-w-0 items-start gap-1 py-3">
+      <div className={`flex min-w-0 items-start gap-1 py-3 ${dragged?.id === row.id ? "opacity-50" : ""}`}
+        draggable={!working} onDragStart={event => {
+          if (working) { event.preventDefault(); return; }
+          event.stopPropagation(); event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-workbench-action", row.id); draggedRef.current = row; setDragged(row);
+        }} onDragEnd={() => { draggedRef.current = null; setDragged(null); setDropTarget(null); }}>
         {children.length ? disclosure(key, open, row.title || "任务") : <span className="w-8 shrink-0" />}
+        <button type="button" draggable={!working} disabled={working} title="拖动到项目；点击编辑所属项目" aria-label={`移动任务 ${row.title}`} onClick={() => onOpen("action", row)} className="mt-0.5 flex h-7 w-5 shrink-0 cursor-grab items-center justify-center text-slate-400 hover:text-sage active:cursor-grabbing disabled:opacity-40"><GripVertical size={15} className="pointer-events-none" /></button>
         <CheckCheck size={15} className={`mt-2 shrink-0 ${row.status === "已完成" ? "text-sage" : "text-slate-400"}`} />
         <div className="min-w-0 flex-1 px-1">
           <button title="编辑任务" className="break-words text-left text-sm font-medium" onClick={() => onOpen("action", row)}>{row.title}</button>
@@ -67,7 +87,17 @@ export default function ExecutionTree({ props, view, filters, fallback, selected
     const complete = actualTasks.filter(item => item.status === "已完成").length;
     const milestones: Row[] = (row as Row).milestones || [];
     return <div key={key} data-node-type="project" data-node-id={row.id} className="min-w-0 border-t border-line">
-      <div className={`flex min-w-0 items-start gap-1 py-3 ${props.target.projectId === row.id ? "bg-[#f0f5f1]" : ""}`}>
+      <div data-project-drop={row.id} aria-busy={working} className={`flex min-w-0 items-start gap-1 py-3 ${dropTarget === row.id ? "bg-[#e9f0ea] outline outline-2 -outline-offset-2 outline-sage" : props.target.projectId === row.id ? "bg-[#f0f5f1]" : ""}`}
+        onDragOver={event => {
+          if (!draggedRef.current || working) return;
+          event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; setDropTarget(row.id);
+        }} onDragLeave={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(current => current === row.id ? null : current);
+        }} onDrop={event => {
+          const task = draggedRef.current;
+          if (!task || working) return;
+          event.preventDefault(); event.stopPropagation(); void moveToProject(task, row);
+        }}>
         {disclosure(key, open, row.name || "项目")}<Folder size={15} className="mt-2 shrink-0 text-sage" />
         <div className="min-w-0 flex-1 px-1">
           <button className="break-words text-left text-sm font-semibold" onClick={() => onProject(row)}>{row.name}</button>

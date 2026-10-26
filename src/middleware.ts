@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthConfig } from "@/lib/auth-config";
 import { isAuthConfigured, isAuthorized } from "@/lib/request-auth";
 import { isSessionValid } from "@/lib/session-auth";
+import { verifyConfiguredPassword } from "@/lib/auth-config";
 import { getCloudSyncConfig, isCloudSyncAuthorized } from "@/lib/cloud-sync";
 
 function challenge(message = "需要验证后才能访问 AI 工作台") {
@@ -14,13 +15,22 @@ export async function middleware(request: NextRequest) {
     const { token, runningOnCloudflare } = getCloudSyncConfig();
     if (runningOnCloudflare && isCloudSyncAuthorized(request.headers.get("x-workbench-sync-token"), token)) return NextResponse.next();
   }
-  const { email, password, runningOnCloudflare } = getAuthConfig();
-  const credentials = { email, password };
-  if (!isAuthConfigured(credentials)) {
-    if (runningOnCloudflare) return new NextResponse("线上访问验证尚未配置，请先设置 Worker Secret。", { status: 503, headers: { "Cache-Control": "no-store" } });
+  const config = await getAuthConfig();
+  const credentials = { email: config.email, password: config.password || config.passwordHash };
+  if (!isAuthConfigured(credentials) || !config.sessionSecret) {
+    if (config.runningOnCloudflare) return new NextResponse("线上访问验证尚未配置，请先设置 Worker Secret。", { status: 503, headers: { "Cache-Control": "no-store" } });
     return NextResponse.next();
   }
-  if ((await isSessionValid(request.cookies.get("ai_workbench_session")?.value, credentials)) || isAuthorized(request.headers.get("authorization"), credentials)) return NextResponse.next();
+  if (await isSessionValid(request.cookies.get("ai_workbench_session")?.value, { email: config.email!, sessionSecret: config.sessionSecret }) || isAuthorized(request.headers.get("authorization"), credentials)) return NextResponse.next();
+  const basic = request.headers.get("authorization");
+  if (basic?.startsWith("Basic ")) {
+    const provided = basic.slice(6);
+    try {
+      const decoded = atob(provided);
+      const separator = decoded.indexOf(":");
+      if (separator > 0 && decoded.slice(0, separator) === config.email && await verifyConfiguredPassword(decoded.slice(separator + 1), config)) return NextResponse.next();
+    } catch { /* Fall through to the normal challenge. */ }
+  }
   return request.nextUrl.pathname.startsWith("/api/") ? challenge() : NextResponse.redirect(new URL("/login", request.url));
 }
 

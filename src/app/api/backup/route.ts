@@ -9,6 +9,7 @@ import { exportStrategy, orderedGoals, restoreStrategy, strategyBackupSchema, va
 import { writeTransaction } from "@/lib/database-writes";
 import { retainNewsUsage } from "@/lib/radar/news";
 import { taskRecurrences } from "@/lib/task-schedule";
+import { workspaceBackupFilename } from "@/lib/workspace-backup";
 
 const include = {
   experiences: true, evidences: true, valueRules: true, resources: true, constraints: true, assumptions: true,
@@ -48,7 +49,8 @@ const boolean = (row: BackupRecord, key: string, fallback = false) => typeof row
 export async function GET() {
   const db = await getDb();
   const data = await db.profile.findUniqueOrThrow({ where: { id: PROFILE_ID }, include });
-  return new NextResponse(JSON.stringify({ format: "ai-workbench-backup", version: 1, exportedAt: new Date().toISOString(), data: { ...data, strategy: await exportStrategy(db), dailyCollaboration: await exportDaily(db) } }, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": "attachment; filename=ai-workbench-backup.json", "Cache-Control": "no-store" } });
+  const exportedAt = new Date();
+  return new NextResponse(JSON.stringify({ format: "ai-workbench-backup", version: 1, exportedAt: exportedAt.toISOString(), data: { ...data, strategy: await exportStrategy(db), dailyCollaboration: await exportDaily(db) } }, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="${workspaceBackupFilename(exportedAt)}"`, "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {

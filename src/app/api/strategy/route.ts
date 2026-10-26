@@ -9,18 +9,20 @@ import { validateEntityLinks } from "@/lib/strategy/entity";
 import { linkSelfAction, saveSelfReview, applySelfUpdate } from "@/lib/strategy/self-loop";
 import { evaluateResource, saveResource } from "@/lib/strategy/resource-operations";
 import { goalProjectContext, generateGoalProjects, saveGoalProjects } from "@/lib/strategy/goal-project-plan";
+import { moveAction } from "@/lib/strategy/move-action";
 
 export async function GET() { await ensureProfile(); return NextResponse.json(await strategyView(await getDb())); }
 export async function POST(request: Request) {
   try {
     const db = await getDb(); await ensureProfile(); await initializeScenes(db);
-    const body = z.object({ action: z.enum(["scenes", "record", "relation", "remove-relation", "classify", "goal-batch", "analyze", "decompose", "goal-project-preview", "goal-project-generate", "goal-project-save", "self-link", "self-review", "self-apply", "resource-save", "resource-evaluate", "profile-scenes-save"]), data: z.unknown() }).parse(await request.json());
+    const body = z.object({ action: z.enum(["scenes", "record", "relation", "remove-relation", "classify", "goal-batch", "analyze", "decompose", "goal-project-preview", "goal-project-generate", "goal-project-save", "self-link", "self-review", "self-apply", "resource-save", "resource-evaluate", "profile-scenes-save", "action-move"]), data: z.unknown() }).parse(await request.json());
     if (body.action === "analyze") return NextResponse.json(await strategyAnalysis(db, body.data));
     if (body.action === "decompose") return NextResponse.json(await decompositionDraft(db, body.data));
     if (body.action === "goal-project-preview") return NextResponse.json(await goalProjectContext(db, body.data));
     if (body.action === "goal-project-generate") return NextResponse.json(await generateGoalProjects(db, body.data));
     const result = await withDailyLock(db, async () => {
       switch (body.action) {
+        case "action-move": return moveAction(db, body.data);
         case "goal-project-save": return saveGoalProjects(db, body.data);
         case "profile-scenes-save": return saveProfileScenes(db, body.data);
         case "resource-save": return saveResource(db, body.data);

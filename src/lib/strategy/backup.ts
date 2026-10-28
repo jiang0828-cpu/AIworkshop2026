@@ -151,9 +151,15 @@ export async function restoreStrategy(db: StrategyDB, data: z.infer<typeof strat
 }
 
 export async function exportSelfStrategy(db: StrategyDB) {
-  const data = await exportStrategy(db);
-  const records = data.records.filter((record) => ["overallVision", "vision", "skill", "profileScene"].includes(record.kind) || record.kind === "tag" && ["experience", "evidence", "valueRule", "resource", "constraint", "assumption"].includes(JSON.parse(record.payload).subjectType));
-  return { ...data, records, versions: data.versions.filter((version) => records.some((record) => record.id === version.recordId)), relations: [], sources: [], pins: [], batches: [], selfReviews: [], executionPlans: [], research: [], radar: [] };
+  await initializeScenes(db);
+  const where = { profileId: PROFILE_ID };
+  const [scenes, candidates] = await Promise.all([
+    db.workbenchScene.findMany({ where }),
+    db.strategyRecord.findMany({ where: { ...where, kind: { in: ["overallVision", "vision", "skill", "profileScene", "tag"] } } }),
+  ]);
+  const records = candidates.filter(record => record.kind !== "tag" || ["experience", "evidence", "valueRule", "resource", "constraint", "assumption"].includes(JSON.parse(record.payload).subjectType));
+  const versions = await db.strategyVersion.findMany({ where: { ...where, recordId: { in: records.map(record => record.id) } } });
+  return { scenes, records, versions, relations: [], sources: [], pins: [], batches: [], selfReviews: [], executionPlans: [], research: [], radar: [] };
 }
 
 export function orderedGoals<T extends { id?: string; parentId?: unknown }>(goals: T[], label = "目标"): T[] {

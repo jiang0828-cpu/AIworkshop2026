@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentSchema, dateSchema, metricsSchema } from "./shared";
-import { PROFILE, planInclude, type DailyDB } from "./service";
+import { loadPlansWithDetails, PROFILE, type DailyDB } from "./service";
 import { orchestrationSchema, readOrchestration, workflowIssues } from "./workflow";
 import { scheduleSchema } from "./scheduling";
 import { affiliationSchema } from "./affiliation";
@@ -117,7 +117,7 @@ export type DailyBackupData = Omit<z.infer<typeof dailyDataSchema>, "assets"> & 
 export async function exportDaily(db: DailyDB) {
   const [agents, plans, assets] = await Promise.all([
     db.dailyAgent.findMany({ where: { profileId: PROFILE } }),
-    db.dailyPlan.findMany({ where: { profileId: PROFILE }, include: planInclude }),
+    loadPlansWithDetails(db),
     db.dailyAsset.findMany({ where: { profileId: PROFILE } }),
   ]);
   return dailyDataSchema.parse(JSON.parse(JSON.stringify({ agents, plans, assets })));

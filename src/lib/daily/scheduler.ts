@@ -1,10 +1,14 @@
 import { agentSchema, reportIsDue } from "./shared";
+import type { Prisma } from "@prisma/client";
 import { callModel, type AIConfig } from "./provider";
-import { generateReport, initializeDaily, ownTask, PROFILE, startStep, taskInclude, withDailyLock, type DailyDB } from "./service";
+import { generateReport, initializeDaily, loadTasksWithDetails, ownTask, PROFILE, startStep, taskInclude, withDailyLock, type DailyDB } from "./service";
 import { readOrchestration, readySteps, reviewRequired } from "./workflow";
 import { readBindings } from "./assets-shared";
+import { isCloudflareD1Runtime } from "../db";
 
 const LEASE_MS = 180000;
+type ReconcileStep = Prisma.DailyStepGetPayload<{ include: { runs: true; timers: true } }>;
+type CompletedTask = { id: string; steps: Array<{ completedAt: Date | null; result: string }> };
 export async function expireRuns(db: DailyDB, now = new Date()) {
   const expired = await db.dailyRun.findMany({ where: { slot: { not: null }, leaseUntilSeconds: { lt: Math.floor(now.getTime() / 1000) } } });
   for (const run of expired) {
@@ -48,8 +52,11 @@ export async function claimRun(db: DailyDB) {
 }
 
 export async function reconcileSteps(db: DailyDB) {
-  const steps = await db.dailyStep.findMany({ where: { status: { in: ["running", "queued"] }, task: { plan: { profileId: PROFILE } } }, include: { runs: true, timers: true } });
-  for (const step of steps) {
+  const stepWhere = { status: { in: ["running", "queued"] }, task: { plan: { profileId: PROFILE } } };
+  const steps: Array<ReconcileStep | null> = isCloudflareD1Runtime()
+    ? await Promise.all((await db.dailyStep.findMany({ where: stepWhere, select: { id: true } })).map(({ id }) => db.dailyStep.findUnique({ where: { id }, include: { runs: true, timers: true } })))
+    : await db.dailyStep.findMany({ where: stepWhere, include: { runs: true, timers: true } });
+  for (const step of steps.filter((row): row is ReconcileStep => Boolean(row))) {
     if (step.assignee === "human" && !step.timers.some((timer) => timer.endedAt === null)) {
       await db.dailyStep.updateMany({ where: { id: step.id, status: "running" }, data: { status: "paused" } });
       continue;
@@ -58,7 +65,9 @@ export async function reconcileSteps(db: DailyDB) {
     if (run && ["review", "produced", "failed"].includes(run.status)) await db.dailyStep.updateMany({ where: { id: step.id, currentRunId: run.id, status: step.status },
       data: run.status === "failed" ? { status: "failed", blockedReason: run.error } : { status: run.status, result: run.output } });
   }
-  const completed = await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { every: { status: "done" }, some: {} } }, include: { steps: { orderBy: { position: "desc" }, take: 1 } } });
+  const completed: CompletedTask[] = isCloudflareD1Runtime()
+    ? (await Promise.all((await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { every: { status: "done" }, some: {} } }, select: { id: true } })).map(({ id }) => db.dailyTask.findUnique({ where: { id }, select: { id: true, steps: { select: { completedAt: true, result: true }, orderBy: { position: "desc" }, take: 1 } } })))).filter((row): row is CompletedTask => Boolean(row))
+    : await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { every: { status: "done" }, some: {} } }, select: { id: true, steps: { select: { completedAt: true, result: true }, orderBy: { position: "desc" }, take: 1 } } });
   for (const task of completed) await db.dailyTask.updateMany({ where: { id: task.id, completedAt: null }, data: { completedAt: task.steps[0].completedAt || new Date(), result: task.steps[0].result } });
 }
 
@@ -99,7 +108,7 @@ export async function schedulerTick(db: DailyDB, config: AIConfig, now = new Dat
   if (control?.maintenance) return;
   await expireRuns(db, now);
   await reconcileSteps(db);
-  const activeTasks = await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { some: { status: { in: ["produced", "done"] } } } }, include: taskInclude });
+  const activeTasks = await loadTasksWithDetails(db, { where: { plan: { profileId: PROFILE }, completedAt: null, steps: { some: { status: { in: ["produced", "done"] } } } } });
   for (const task of activeTasks) if (readOrchestration(task.orchestration) && readySteps(task).some((step) => step.assignee === "ai" && step.status === "pending")) {
     try { await withDailyLock(db, async () => {
       const current = await ownTask(db, task.id);

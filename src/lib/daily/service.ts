@@ -11,11 +11,14 @@ import { isStandaloneTemporary, readAffiliation, withAffiliation, type TaskAffil
 import { validateNestedLinks } from "../strategy/entity";
 import { agentSnapshot, boundAssets, initializeAssets } from "./assets";
 import { isRecurring, recurrenceDates, recurrenceDueAt } from "../recurring-tasks";
+import { isCloudflareD1Runtime } from "../db";
 
 export const PROFILE = "local-profile";
 export type DailyDB = PrismaClient | Prisma.TransactionClient;
 export const taskInclude = { steps: { orderBy: { position: "asc" as const }, include: { timers: true, runs: { orderBy: { attempt: "desc" as const } } } }, checkpoints: true };
 export const planInclude = { tasks: { orderBy: [{ priority: "asc" as const }, { createdAt: "asc" as const }], include: taskInclude }, report: true };
+type DailyTaskDetailed = Prisma.DailyTaskGetPayload<{ include: typeof taskInclude }>;
+type DailyPlanDetailed = Prisma.DailyPlanGetPayload<{ include: typeof planInclude }>;
 const defaults = [
   { key: "writing", name: "写作 Agent", prompt: "你是写作助手。根据给定任务与资料产出可验收的中文文本。区分事实和建议，不编造来源。" },
   { key: "coding", name: "编码建议 Agent", prompt: "你是编程助手。根据给定任务产出代码建议和验证方法。你没有代码执行权限，不得声称已修改文件或运行测试。" },
@@ -31,6 +34,36 @@ export async function initializeDaily(db: DailyDB) {
   for (const agent of defaults.filter((agent) => !existing.has(`daily-${agent.key}`))) await db.dailyAgent.upsert({ where: { id: `daily-${agent.key}` },
     create: { id: `daily-${agent.key}`, profileId: PROFILE, name: agent.name, role: agent.key, prompt: agent.prompt }, update: {} });
   await initializeAssets(db);
+}
+
+// D1 limits the number of bound variables in a single SQLite statement. Prisma's
+// nested include turns the step/run/timer relations into IN (...) queries whose
+// variable count grows with the number of tasks in a day. Keep the normal
+// relation query for SQLite, but load each task separately on D1 so a busy day
+// cannot make the whole page fail with "too many SQL variables".
+export async function loadTaskDetails(db: DailyDB, id: string) {
+  return db.dailyTask.findUnique({ where: { id }, include: taskInclude });
+}
+
+export async function loadTasksWithDetails(db: DailyDB, args: { where: Prisma.DailyTaskWhereInput; orderBy?: Prisma.DailyTaskOrderByWithRelationInput | Prisma.DailyTaskOrderByWithRelationInput[] }): Promise<DailyTaskDetailed[]> {
+  if (!isCloudflareD1Runtime()) return db.dailyTask.findMany({ ...args, include: taskInclude });
+  const rows = await db.dailyTask.findMany(args);
+  const details = await Promise.all(rows.map((row) => loadTaskDetails(db, row.id)));
+  return details.filter((row): row is DailyTaskDetailed => Boolean(row));
+}
+
+export async function loadPlanWithDetails(db: DailyDB, date: string): Promise<DailyPlanDetailed | null> {
+  if (!isCloudflareD1Runtime()) return db.dailyPlan.findUnique({ where: { profileId_date: { profileId: PROFILE, date } }, include: planInclude });
+  const plan = await db.dailyPlan.findUnique({ where: { profileId_date: { profileId: PROFILE, date } }, include: { report: true } });
+  if (!plan) return null;
+  const tasks = await loadTasksWithDetails(db, { where: { planId: plan.id }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }] });
+  return { ...plan, tasks };
+}
+
+export async function loadPlansWithDetails(db: DailyDB): Promise<DailyPlanDetailed[]> {
+  if (!isCloudflareD1Runtime()) return db.dailyPlan.findMany({ where: { profileId: PROFILE }, include: planInclude });
+  const plans = await db.dailyPlan.findMany({ where: { profileId: PROFILE }, include: { report: true } });
+  return Promise.all(plans.map(async (plan) => ({ ...plan, tasks: await loadTasksWithDetails(db, { where: { planId: plan.id }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }] }) })));
 }
 
 // The same database lock gates API mutations, backup replacement and scheduler claims.
@@ -54,13 +87,13 @@ export async function getDailyView(db: DailyDB, date: string, config: AIConfig):
   await initializeDaily(db);
   await initializeScenes(db);
   const [plan, agents, control, actions] = await Promise.all([
-    db.dailyPlan.findUnique({ where: { profileId_date: { profileId: PROFILE, date } }, include: planInclude }),
+    loadPlanWithDetails(db, date),
     db.dailyAgent.findMany({ where: { profileId: PROFILE }, orderBy: { id: "asc" } }),
     db.dailyControl.findUnique({ where: { profileId: PROFILE } }),
     db.action.findMany({ where: { profileId: PROFILE }, orderBy: { updatedAt: "desc" } }),
   ]);
   const [scenes, goals, projects] = await Promise.all([db.workbenchScene.findMany({ where: { profileId: PROFILE }, orderBy: { position: "asc" } }), db.goal.findMany({ where: { profileId: PROFILE } }), db.project.findMany({ where: { profileId: PROFILE } })]);
-  const tasks = plan?.tasks.map((task) => {
+  const tasks = plan?.tasks.map((task: DailyTaskDetailed) => {
     const action = actions.find((action) => action.id === task.actionId);
     const stored = readAffiliation(task.orchestration);
     const project = projects.find((row) => row.id === (action ? action.projectId : stored?.projectId));
@@ -335,9 +368,9 @@ export function canSchedule(task: { completedAt: Date | string | null; steps: Ar
   return !task.completedAt && !task.steps.every((step) => step.status === "done") && !task.steps.some((step) => ["running", "preparing", "queued"].includes(step.status));
 }
 export async function timeReservations(db: DailyDB, excludeIds: string[] = []) {
-  const rows = await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, id: { notIn: excludeIds } }, include: taskInclude });
+  const rows = await loadTasksWithDetails(db, { where: { plan: { profileId: PROFILE }, completedAt: null, id: { notIn: excludeIds } } });
   const now = new Date();
-  const active = rows.flatMap((row) => {
+  const active = rows.flatMap((row: DailyTaskDetailed) => {
     const human = row.steps.filter((step) => step.assignee === "human" && step.status === "running");
     if (!human.length) return [];
     const remaining = Math.max(15, ...human.map((step) => step.estimatedMinutes - timerSeconds(step.timers, now) / 60));
@@ -374,7 +407,9 @@ export async function saveTimes(db: DailyDB, proposals: Array<Omit<TimeProposal,
   });
 }
 export async function generateReport(db: DailyDB, date: string, reflection?: string, now = new Date()) {
-  const plan = await db.dailyPlan.upsert({ where: { profileId_date: { profileId: PROFILE, date } }, create: { profileId: PROFILE, date }, update: {}, include: planInclude });
+  await db.dailyPlan.upsert({ where: { profileId_date: { profileId: PROFILE, date } }, create: { profileId: PROFILE, date }, update: {} });
+  const plan = await loadPlanWithDetails(db, date);
+  if (!plan) throw new Error("每日计划不存在");
   const metrics = computeMetrics(plan.tasks, now);
   const text = reflection ?? plan.report?.reflection ?? "";
   return db.dailyReport.upsert({ where: { planId: plan.id },

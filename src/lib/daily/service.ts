@@ -11,6 +11,7 @@ import { isStandaloneTemporary, readAffiliation, withAffiliation, type TaskAffil
 import { validateNestedLinks } from "../strategy/entity";
 import { agentSnapshot, boundAssets, initializeAssets } from "./assets";
 import { isRecurring, recurrenceDates, recurrenceDueAt } from "../recurring-tasks";
+import { isCloudflareD1Runtime } from "../db";
 
 export const PROFILE = "local-profile";
 export type DailyDB = PrismaClient | Prisma.TransactionClient;
@@ -41,9 +42,21 @@ export async function initializeDaily(db: DailyDB) {
 // relation query for SQLite, but load each task separately on D1 so a busy day
 // cannot make the whole page fail with "too many SQL variables".
 export async function loadTaskDetails(db: DailyDB, id: string) {
-  // findFirst intentionally avoids Prisma's findUnique dataloader batching;
-  // batching all tasks back into one IN (...) query defeats the D1 safeguard.
-  return db.dailyTask.findFirst({ where: { id }, include: taskInclude });
+  if (!isCloudflareD1Runtime()) return db.dailyTask.findFirst({ where: { id }, include: taskInclude });
+  // Avoid nested Prisma includes on D1. Their relation loader can build a
+  // large IN (...) statement for all task/step/run IDs during one request.
+  const task = await db.dailyTask.findFirst({ where: { id } });
+  if (!task) return null;
+  const steps = await db.dailyStep.findMany({ where: { taskId: id }, orderBy: { position: "asc" } });
+  const detailedSteps = await Promise.all(steps.map(async (step) => {
+    const [timers, runs] = await Promise.all([
+      db.dailyTimer.findMany({ where: { stepId: step.id } }),
+      db.dailyRun.findMany({ where: { stepId: step.id }, orderBy: { attempt: "desc" } }),
+    ]);
+    return { ...step, timers, runs };
+  }));
+  const checkpoints = await db.dailyCheckpoint.findMany({ where: { taskId: id } });
+  return { ...task, steps: detailedSteps, checkpoints };
 }
 
 export async function loadTasksWithDetails(db: DailyDB, args: { where: Prisma.DailyTaskWhereInput; orderBy?: Prisma.DailyTaskOrderByWithRelationInput | Prisma.DailyTaskOrderByWithRelationInput[] }): Promise<DailyTaskDetailed[]> {

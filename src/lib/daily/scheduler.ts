@@ -54,7 +54,7 @@ export async function claimRun(db: DailyDB) {
 export async function reconcileSteps(db: DailyDB) {
   const stepWhere = { status: { in: ["running", "queued"] }, task: { plan: { profileId: PROFILE } } };
   const steps: Array<ReconcileStep | null> = isCloudflareD1Runtime()
-    ? await Promise.all((await db.dailyStep.findMany({ where: stepWhere, select: { id: true } })).map(({ id }) => db.dailyStep.findUnique({ where: { id }, include: { runs: true, timers: true } })))
+    ? await Promise.all((await db.dailyStep.findMany({ where: stepWhere, select: { id: true } })).map(({ id }) => db.dailyStep.findFirst({ where: { id }, include: { runs: true, timers: true } })))
     : await db.dailyStep.findMany({ where: stepWhere, include: { runs: true, timers: true } });
   for (const step of steps.filter((row): row is ReconcileStep => Boolean(row))) {
     if (step.assignee === "human" && !step.timers.some((timer) => timer.endedAt === null)) {
@@ -66,7 +66,7 @@ export async function reconcileSteps(db: DailyDB) {
       data: run.status === "failed" ? { status: "failed", blockedReason: run.error } : { status: run.status, result: run.output } });
   }
   const completed: CompletedTask[] = isCloudflareD1Runtime()
-    ? (await Promise.all((await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { every: { status: "done" }, some: {} } }, select: { id: true } })).map(({ id }) => db.dailyTask.findUnique({ where: { id }, select: { id: true, steps: { select: { completedAt: true, result: true }, orderBy: { position: "desc" }, take: 1 } } })))).filter((row): row is CompletedTask => Boolean(row))
+    ? (await Promise.all((await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { every: { status: "done" }, some: {} } }, select: { id: true } })).map(({ id }) => db.dailyTask.findFirst({ where: { id }, select: { id: true, steps: { select: { completedAt: true, result: true }, orderBy: { position: "desc" }, take: 1 } } })))).filter((row): row is CompletedTask => Boolean(row))
     : await db.dailyTask.findMany({ where: { plan: { profileId: PROFILE }, completedAt: null, steps: { every: { status: "done" }, some: {} } }, select: { id: true, steps: { select: { completedAt: true, result: true }, orderBy: { position: "desc" }, take: 1 } } });
   for (const task of completed) await db.dailyTask.updateMany({ where: { id: task.id, completedAt: null }, data: { completedAt: task.steps[0].completedAt || new Date(), result: task.steps[0].result } });
 }

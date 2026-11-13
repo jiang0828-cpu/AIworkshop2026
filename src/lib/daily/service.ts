@@ -11,7 +11,6 @@ import { isStandaloneTemporary, readAffiliation, withAffiliation, type TaskAffil
 import { validateNestedLinks } from "../strategy/entity";
 import { agentSnapshot, boundAssets, initializeAssets } from "./assets";
 import { isRecurring, recurrenceDates, recurrenceDueAt } from "../recurring-tasks";
-import { isCloudflareD1Runtime } from "../db";
 
 export const PROFILE = "local-profile";
 export type DailyDB = PrismaClient | Prisma.TransactionClient;
@@ -42,18 +41,18 @@ export async function initializeDaily(db: DailyDB) {
 // relation query for SQLite, but load each task separately on D1 so a busy day
 // cannot make the whole page fail with "too many SQL variables".
 export async function loadTaskDetails(db: DailyDB, id: string) {
-  return db.dailyTask.findUnique({ where: { id }, include: taskInclude });
+  // findFirst intentionally avoids Prisma's findUnique dataloader batching;
+  // batching all tasks back into one IN (...) query defeats the D1 safeguard.
+  return db.dailyTask.findFirst({ where: { id }, include: taskInclude });
 }
 
 export async function loadTasksWithDetails(db: DailyDB, args: { where: Prisma.DailyTaskWhereInput; orderBy?: Prisma.DailyTaskOrderByWithRelationInput | Prisma.DailyTaskOrderByWithRelationInput[] }): Promise<DailyTaskDetailed[]> {
-  if (!isCloudflareD1Runtime()) return db.dailyTask.findMany({ ...args, include: taskInclude });
   const rows = await db.dailyTask.findMany(args);
   const details = await Promise.all(rows.map((row) => loadTaskDetails(db, row.id)));
   return details.filter((row): row is DailyTaskDetailed => Boolean(row));
 }
 
 export async function loadPlanWithDetails(db: DailyDB, date: string): Promise<DailyPlanDetailed | null> {
-  if (!isCloudflareD1Runtime()) return db.dailyPlan.findUnique({ where: { profileId_date: { profileId: PROFILE, date } }, include: planInclude });
   const plan = await db.dailyPlan.findUnique({ where: { profileId_date: { profileId: PROFILE, date } }, include: { report: true } });
   if (!plan) return null;
   const tasks = await loadTasksWithDetails(db, { where: { planId: plan.id }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }] });
@@ -61,7 +60,6 @@ export async function loadPlanWithDetails(db: DailyDB, date: string): Promise<Da
 }
 
 export async function loadPlansWithDetails(db: DailyDB): Promise<DailyPlanDetailed[]> {
-  if (!isCloudflareD1Runtime()) return db.dailyPlan.findMany({ where: { profileId: PROFILE }, include: planInclude });
   const plans = await db.dailyPlan.findMany({ where: { profileId: PROFILE }, include: { report: true } });
   return Promise.all(plans.map(async (plan) => ({ ...plan, tasks: await loadTasksWithDetails(db, { where: { planId: plan.id }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }] }) })));
 }

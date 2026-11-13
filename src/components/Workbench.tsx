@@ -3,6 +3,7 @@
 
 import JSZip from "jszip";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { loadWorkbench } from "@/lib/load-workbench";
 import AIUseCenter from "./AIUseCenter";
 import DailyCollaboration from "./DailyCollaboration";
 import MyWorkbench from "./MyWorkbench";
@@ -280,6 +281,7 @@ export default function Workbench() {
   const [aiDraft, setAiDraft] = useState<Item | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState<{ type: string; item?: Item } | null>(
@@ -332,12 +334,13 @@ export default function Workbench() {
   }, [pendingNavigation, navigateDirect]);
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
+    setLoadError("");
     try {
-      const response = await fetch("/api/data", { cache: "no-store" });
-      if (!response.ok) throw new Error();
-      setData(await response.json());
-    } catch {
-      notify("读取数据失败，请确认数据库已初始化");
+      setData(await loadWorkbench());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "读取失败，请检查网络后重试。";
+      setLoadError(message);
+      notify(message);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -392,6 +395,7 @@ export default function Workbench() {
         正在打开你的工作台…
       </div>
     );
+  if (!data) return <main className="grid min-h-screen place-items-center px-5"><div role="alert" className="max-w-md space-y-4 text-center"><h1 className="text-lg font-semibold">暂时无法打开工作台</h1><p className="text-sm text-slate-500">{loadError || "尚未读取到数据，请重试。"}</p><div className="flex justify-center gap-4"><button className="rounded-lg bg-sage px-4 py-2 text-sm text-white" onClick={() => void load()}>重新加载</button><a className="px-4 py-2 text-sm text-sage" href="/login">重新登录</a></div></div></main>;
   return (
     <div className="min-h-screen md:flex">
       <aside

@@ -32,7 +32,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "cf:build": "prisma generate --generator cloudflareClient && node scripts/generate-prisma-models.cjs && opennextjs-cloudflare build",
-    "cf:preview": "opennextjs-cloudflare preview",
+    "cf:preview": "node scripts/prepare-worker-deploy.mjs && opennextjs-cloudflare preview",
     "cf:deploy": "node scripts/prepare-worker-deploy.mjs && opennextjs-cloudflare deploy",
     "cf:d1:migrate": "wrangler d1 migrations apply ai-workbench-data --remote",
     "cf:daily:check": "prisma generate --generator cloudflareClient && wrangler deploy --config cloudflare/daily-wrangler.jsonc --dry-run --outdir .wrangler/daily-build",

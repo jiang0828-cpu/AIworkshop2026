@@ -48,6 +48,8 @@ export async function atomic(db: StrategyDB, statements: Statement[]) {
 }
 export async function initializeScenes(db: StrategyDB) {
   const existing = await db.workbenchScene.findMany({ where: { profileId: PROFILE_ID } });
+  // Normal reads must not perform seven initialization writes on every refresh.
+  if (sceneDefaults.every(({ slot }) => existing.some(scene => scene.slot === slot))) return;
   const upgrading = existing.length > 0 && !existing.some((scene) => scene.slot === 5);
   const systemPosition = existing.length && !upgrading ? Math.max(...existing.map(scene => scene.position)) + 1 : sceneDefaults.length - 1;
   for (const [position, { slot, name }] of sceneDefaults.entries()) await db.workbenchScene.upsert({ where: { profileId_slot: { profileId: PROFILE_ID, slot } },

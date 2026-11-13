@@ -4,6 +4,8 @@ import { orchestrationSchema, workflowIssues } from "./workflow";
 import { scheduleSchema } from "./scheduling";
 import { affiliationSchema, type TaskAffiliation } from "./affiliation";
 import { capabilitiesSchema, type AssetView } from "./assets-shared";
+import { taskStatus } from "./status";
+export { shanghaiDate, taskStatus } from "./status";
 
 export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T00:00:00Z`);
@@ -50,18 +52,8 @@ export const statusLabels: Record<string, string> = {
 };
 export const laneLabels = { A: "A · 亲自执行", B: "B · AI 执行", mixed: "混合协同" };
 
-export function shanghaiDate(now = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-}
 export function reportIsDue(date: string, now = new Date()) {
   return new Date(`${date}T22:00:00+08:00`).getTime() <= now.getTime();
-}
-export function taskStatus(steps: Array<{ status: string }>) {
-  if (!steps.length) return "pending";
-  if (steps.every((step) => step.status === "done")) return "done";
-  for (const status of ["blocked", "failed", "review", "running", "preparing", "queued", "paused"])
-    if (steps.some((step) => step.status === status)) return status;
-  return steps.every((step) => ["done", "produced"].includes(step.status)) ? "review" : "pending";
 }
 
 type OrderedTask = {

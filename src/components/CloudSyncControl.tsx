@@ -17,10 +17,15 @@ export default function CloudSyncControl({ compact = false }: { compact?: boolea
   }, []);
   useEffect(() => {
     void read();
+  }, [read]);
+  useEffect(() => {
+    // Cloud deployments cannot initiate local-to-cloud sync; polling their
+    // status still wakes the full Next worker even when this control is hidden.
+    if (state?.runningOnCloudflare) return;
     const timer = window.setInterval(() => void read(), 5000);
     window.addEventListener("focus", read);
     return () => { clearInterval(timer); window.removeEventListener("focus", read); };
-  }, [read]);
+  }, [read, state?.runningOnCloudflare]);
   if (state?.runningOnCloudflare) return compact ? null : <section className="mb-5 border border-line bg-white p-5"><h2 className="font-semibold">线上数据</h2><p className="mt-2 text-sm text-slate-500">当前使用云端数据库。请在本地工作台发起本地到线上的同步。</p></section>;
   const busy = submitting || Boolean(state && ["preparing", "uploading", "committing"].includes(state.status));
   const label = error || (state?.status === "error" ? "同步失败" : state?.status === "synced" ? "线上已同步" : state?.status === "uploading" ? `上传中 ${state.uploaded}/${state.total}` : state?.status === "committing" ? "线上提交中" : busy ? "准备同步中" : !state ? "读取同步状态" : state.configured ? "待同步" : "未配置同步");

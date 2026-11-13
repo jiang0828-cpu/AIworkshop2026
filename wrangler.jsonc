@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ai-workbench",
-  "main": ".open-next/worker.js",
+  "main": "cloudflare/workbench-worker.ts",
+  "rules": [{ "type": "Text", "globs": ["**/workbench-*.html"], "fallthrough": true }],
   "compatibility_date": "2026-08-29",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "vars": {
